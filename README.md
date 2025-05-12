@@ -1,54 +1,81 @@
-# React + TypeScript + Vite
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+# Interactive image gen
 
-Currently, two official plugins are available:
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Run Locally
 
-## Expanding the ESLint configuration
+Clone the project
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default tseslint.config({
-  extends: [
-    // Remove ...tseslint.configs.recommended and replace with this
-    ...tseslint.configs.recommendedTypeChecked,
-    // Alternatively, use this for stricter rules
-    ...tseslint.configs.strictTypeChecked,
-    // Optionally, add this for stylistic rules
-    ...tseslint.configs.stylisticTypeChecked,
-  ],
-  languageOptions: {
-    // other options...
-    parserOptions: {
-      project: ['./tsconfig.node.json', './tsconfig.app.json'],
-      tsconfigRootDir: import.meta.dirname,
-    },
-  },
-})
+```bash
+  git clone https://github.com/Hina-Shahzad/interactive-image-gen
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Go to the project directory
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default tseslint.config({
-  plugins: {
-    // Add the react-x and react-dom plugins
-    'react-x': reactX,
-    'react-dom': reactDom,
-  },
-  rules: {
-    // other rules...
-    // Enable its recommended typescript rules
-    ...reactX.configs['recommended-typescript'].rules,
-    ...reactDom.configs.recommended.rules,
-  },
-})
+```bash
+  cd interactive-image-gen
 ```
+
+## Backend setup
+1. ### Navigate to the Backend Directory
+
+`` cd interactive_image_gen/backend ``
+
+2. ### Create a Virtual Environment
+Run the following command to create a virtual environment. This keeps all your Python dependencies isolated.
+
+```` python -m venv venv ````
+
+3. ### Activate the Virtual Environment
+For Windows (Command Prompt or PowerShell)
+
+``venv\Scripts\activate``
+
+For macOS/Linux (or Git Bash on Windows):
+
+``source venv/bin/activate``
+
+4. ### Install Backend Dependencies
+Once the virtual environment is activated, install the required dependencies for the backend.
+
+Make sure you have a requirements.txt file in the backend/ folder with the following content:
+````
+Flask==2.2.2
+Flask-CORS==3.0.10
+werkzeug==2.2.2
+matplotlib==3.7.1
+numpy==1.24.3
+  ````
+
+Now, install the dependencies:
+
+``
+pip install -r requirements.txt
+``
+
+5. ### Run the Flask Backend
+Once the dependencies are installed, you can run the backend Flask server:
+````
+cd backend 
+python mock_imaging.py 
+````
+
+## Frontend setup
+1. ### Open a New Terminal Window
+2. ### Navigate to the Frontend Directory
+
+````
+cd frontend
+````
+3. ### Install Frontend dependencies
+````
+ npm install 
+ ````
+
+4. ### Start the Frontend Server
+````
+npm run dev
+````
+This will start the frontend at ````http://localhost:5173 ````
+
+
