@@ -4,6 +4,8 @@ import flask
 from matplotlib import pyplot as plt
 import numpy as np
 import io
+from pydantic import ValidationError
+from schema import ParamSchema
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": ["http://localhost:5173"]}})
@@ -17,7 +19,7 @@ def generate_image(inline, aperture,**kwargs):
     """This is a slow function which will be running in a separate 
     process in later versions"""
     
-    print(f'image generated with these parameter inline: {inline} aperture {aperture} ', )
+    #print(f'image generated with these parameter inline: {inline} aperture {aperture} ', )
     global current_image
     plt.figure(figsize=(6,6))
     plt.plot(inline,aperture,'o')
@@ -33,6 +35,7 @@ def generate_image(inline, aperture,**kwargs):
     Trcv = np.sqrt(X**2 + Y**2 + (Z)**2)/Vp
     Tdirect = np.sqrt(z_src**2)/Vp
     Lag = Tshot + Trcv - Tdirect
+    
     plt.imshow(Lag,extent=(-1000,1000,-2000,0),aspect=1)
     plt.tight_layout()
     plt.colorbar()
@@ -61,29 +64,12 @@ def handle_exception(e):
 def list_keys():
     return jsonify(param_db), 200
 
-# Endpoint to get/put parameter values and also re-generate the current_image
-'''@app.route('/param/<string:key>', methods=['GET','PUT'])
-def param(key):
-    if not key in param_db:
-        jsonify({
-        "status": "failure",
-        "message": f"Parameter {key} does not exist"
-        }), 404
-    if request.method == 'GET':
-        return jsonify({key:param_db[key]}), 200
-    elif request.method == 'PUT':
-        data = request.get_json()
-        newval = data.get(key)
-        if newval != param_db[key]:
-            param_db[key] = newval
-            param_db_version += 1
-            generate_image(**param_db) # In the future this will be a background process.
-        return jsonify({
-        "status": "success",
-        "message": f"Parameter {key} updated",
-        "updated_value": param_db[key]
-        }), 200 '''
+@app.route('/param/version', methods=['GET'])
+def get_version():
+    global param_db_version
+    return jsonify({"version": param_db_version})
 
+# Endpoint to get/put parameter values and also re-generate the current_image
 @app.route('/param/<string:key>', methods=['GET','PUT'])
 def param(key):
     try:
@@ -104,6 +90,16 @@ def param(key):
                 return jsonify({
                     "status": "failure",
                     "message": f"Missing or invalid payload for key '{key}'"
+                }), 400
+            
+            try:
+                validated_data = ParamSchema(**data)
+                print(f"Validation successful, validated data: {validated_data}")
+            except ValidationError as e:
+                print(f"Validation failed: {e.errors()}")
+                return jsonify({
+                    "status": "failure",
+                    "message": f"Validation failed: {e.errors()}"
                 }), 400
 
             newval = data.get(key)

@@ -45,6 +45,7 @@ Flask-CORS==3.0.10
 werkzeug==2.2.2
 matplotlib==3.7.1
 numpy==1.24.3
+pydantic==2.11.4
   ````
 
 Now, install the dependencies:
