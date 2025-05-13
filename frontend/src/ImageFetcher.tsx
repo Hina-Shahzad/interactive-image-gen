@@ -1,122 +1,97 @@
 import { useState, useEffect } from 'react';
 import { Grid, Paper, Typography, TextField, Button, CircularProgress, Alert } from '@mui/material';
 
-// Custom hook for debouncing input values
-const useDebounce = (value: any, delay: number) => {
-    const [debouncedValue, setDebouncedValue] = useState(value);
-
-    useEffect(() => {
-        const handler = setTimeout(() => {
-            setDebouncedValue(value);
-        }, delay);
-
-        return () => {
-            clearTimeout(handler);
-        };
-    }, [value, delay]);
-
-    return debouncedValue;
-};
-
 const ImageFetcher = () => {
+    const [params, setParams] = useState<{ [key: string]: number }>({});
     const [imageUrl, setImageUrl] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-
-    const [inline, setInline] = useState<number>(18);
-    const [aperture, setAperture] = useState<number>(1000000);
     const [isFetchingImage, setIsFetchingImage] = useState(false);
 
-    const debouncedInline = useDebounce(inline, 500);
-    const debouncedAperture = useDebounce(aperture, 500);
-
-    
-    const fetchImage = async () => {
-        if (isFetchingImage) return; 
-        setIsFetchingImage(true);
-
+    const fetchParams = async () => {
         try {
-            if (imageUrl) {
-                URL.revokeObjectURL(imageUrl);
-            }
-
-            setLoading(true);
-
-            const response = await fetch('http://127.0.0.1:5000/result.png');
-            if (!response.ok) {
-                throw new Error('Failed to fetch image');
-            }
-
-            const imageBlob = await response.blob();
-            const imageObjectUrl = URL.createObjectURL(imageBlob);
-            setImageUrl(imageObjectUrl);
-        } catch (error) {
-            if (error instanceof Error) {
-                setError(error.message);
-            } else {
-                setError('An unknown error occurred');
-            }
-        } finally {
-            setIsFetchingImage(false);
-            setLoading(false);
+            const response = await fetch('http://localhost:5000/param');
+            if (!response.ok) throw new Error('Failed to fetch parameters');
+            const data = await response.json();
+            setParams(data);
+        } catch (err) {
+            console.error(err);
+            setError('Error fetching parameters');
         }
     };
 
+    const fetchImage = async () => {
+        if (isFetchingImage) return;
+        setIsFetchingImage(true);
 
-    async function updateParams() {
         try {
-            const resInline = await fetch(`http://localhost:5000/param/inline`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ inline: debouncedInline }),
-            });
+            if (imageUrl) URL.revokeObjectURL(imageUrl);
+            setLoading(true);
 
-            const resAperture = await fetch(`http://localhost:5000/param/aperture`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ aperture: debouncedAperture }),
-            });
+            const response = await fetch('http://localhost:5000/result.png');
+            if (!response.ok) throw new Error('Failed to fetch image');
+            const blob = await response.blob();
+            const objectUrl = URL.createObjectURL(blob);
+            setImageUrl(objectUrl);
+        } catch (error) {
+            console.error(error);
+            setError('Failed to fetch image');
+        } finally {
+            setLoading(false);
+            setIsFetchingImage(false);
+        }
+    };
 
-            
-            if (resInline.ok && resAperture.ok) {
-                await new Promise((resolve) => setTimeout(resolve, 500));
-                fetchImage(); 
-            } else {
-                setError('Failed to update parameters');
+    const updateParams = async () => {
+        try {
+            for (const [key, value] of Object.entries(params)) {
+                const res = await fetch(`http://localhost:5000/param/${key}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ [key]: value }),
+                });
+                if (!res.ok) throw new Error(`Failed to update ${key}`);
             }
+
+            // Small delay to make sure image is updated on backend side
+            await new Promise((resolve) => setTimeout(resolve, 500));
+            fetchImage();
         } catch (err) {
-            console.error(' Update error:', err);
+            console.error('Update error:', err);
             setError('An error occurred while updating parameters');
         }
-    }
+    };
 
     useEffect(() => {
+        fetchParams();
         fetchImage();
     }, []);
+
+    const handleParamChange = (key: string, value: number) => {
+        setParams((prev) => ({
+            ...prev,
+            [key]: value,
+        }));
+    };
 
     return (
         <Grid container spacing={2} padding={2}>
             <Grid item xs={12} md={4}>
                 <Paper elevation={3} style={{ padding: '20px' }}>
                     <Typography variant="h5" gutterBottom>
-                        Update Parameters
+                        Dynamic Parameters
                     </Typography>
-                    <TextField
-                        label="Inline"
-                        type="number"
-                        value={inline}
-                        onChange={(e) => setInline(Number(e.target.value))}
-                        fullWidth
-                        margin="normal"
-                    />
-                    <TextField
-                        label="Aperture"
-                        type="number"
-                        value={aperture}
-                        onChange={(e) => setAperture(Number(e.target.value))}
-                        fullWidth
-                        margin="normal"
-                    />
+                    {Object.entries(params).map(([key, value]) => (
+                        <TextField
+                            key={key}
+                            label={key}
+                            type="number"
+                            value={value}
+                            onChange={(e) => handleParamChange(key, Number(e.target.value))}
+                            fullWidth
+                            margin="normal"
+                        />
+                    ))}
                     <Button variant="contained" color="primary" onClick={updateParams} fullWidth>
                         Update Image
                     </Button>

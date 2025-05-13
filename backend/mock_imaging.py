@@ -13,7 +13,7 @@ param_db = {'inline':18,
 param_db_version = 0
 current_image = None # This is a png image bytes object
 
-def generate_image(inline, aperture):
+def generate_image(inline, aperture,**kwargs):
     """This is a slow function which will be running in a separate 
     process in later versions"""
     
@@ -22,7 +22,6 @@ def generate_image(inline, aperture):
     plt.figure(figsize=(6,6))
     plt.plot(inline,aperture,'o')
     x = np.linspace(-1000,1000,500)
-    print(f'x: {x}')
     z = np.linspace(0,-2000,500)
     X,Z = np.meshgrid(x,z)
     Y = np.zeros_like(X) + inline*10
