@@ -13,8 +13,10 @@ CORS(app, resources={r"/*": {"origins": ["http://localhost:5173"]}})
 
 param_db_meta = {'inline':{'name':'Inline', 'widget':'intslider', 'min':0, 'max':123},
                  'aperture':{'name':'Aperture', 'widget':'floatbox', 'min':0, 'max':1e7}}
+
 param_db = {'inline':18,
           'aperture':1e6}
+
 param_db_version = 0
 current_image = None # This is a png image bytes object
 image_update_clients = []
@@ -46,14 +48,10 @@ def validate_param(data):
 
     return validated_data
 
-    
-
 def notify_image_update_clients(event_data):
     print(f"Notify inage update client :{event_data}")
     for client_queue in image_update_clients:
         client_queue.put(event_data)
-
-
 
 def generate_image(inline, aperture,**kwargs):
     """This is a slow function which will be running in a separate 
@@ -113,7 +111,6 @@ def get_version():
     global param_db_version
     return jsonify({"version": param_db_version})
 
-
 #SSE route for live updates
 @app.route('/param/live-updates')
 def stream_live_param_updates():
@@ -130,8 +127,6 @@ def stream_live_param_updates():
     image_update_clients.append(client_queue)
     print(f"A new client subscribed to live param updates.{image_update_clients}")
     return Response(event_stream(client_queue), content_type='text/event-stream')
-
-
 
 # Endpoint to get/put parameter values and also re-generate the current_image
 @app.route('/param/<string:key>', methods=['GET','PUT'])
@@ -194,8 +189,6 @@ def param(key):
                     "status": "no_change",
                     "message": f"Parameter {key} already has the value {param_db[key]}"
                 }), 200
-            
-
 
     except Exception as e:
         return jsonify({
