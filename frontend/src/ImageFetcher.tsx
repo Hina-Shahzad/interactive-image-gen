@@ -163,7 +163,7 @@ const ImageFetcher = () => {
     }, [imageUrl]);
 
     // Only trigger updateAllParams if debouncedParams actually changed
-    /*useEffect(() => {
+    useEffect(() => {
         console.log("This useEffect is calling when the Params are changed");
         const hasChanged = JSON.stringify(prevDebouncedParams.current) !== JSON.stringify(debouncedParams);
         const isEmpty = Object.keys(debouncedParams).length === 0;
@@ -173,7 +173,7 @@ const ImageFetcher = () => {
             prevDebouncedParams.current = debouncedParams;
             updateAllParams();
         }
-    }, [debouncedParams, invalidParams, updateAllParams]);*/
+    }, [debouncedParams, invalidParams]);
 
     const handleParamChange = useCallback((key: string, value: number) => {
         setParams(prev => {
