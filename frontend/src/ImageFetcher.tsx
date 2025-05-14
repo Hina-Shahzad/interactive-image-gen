@@ -1,25 +1,57 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Grid, Paper, Typography, TextField, Button, CircularProgress, Alert } from '@mui/material';
 import useDebounce from './Debounce';
+import type { ParamMetadata, ParamResponse } from './type';
 
 const ImageFetcher = () => {
     const [params, setParams] = useState<{ [key: string]: number }>({});
+    const [paramsMetadata, setParamsMetadata] = useState<{ [key: string]: ParamMetadata }>({})
     const [imageUrl, setImageUrl] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [isUpdating, setIsUpdating] = useState(false);
     const [paramVersion, setParamVersion] = useState<number>(0);
+    const [invalidParams, setInvalidParams] = useState<{ [key: string]: string | null }>({});
 
     const debouncedParams = useDebounce(params, 800);
     const prevDebouncedParams = useRef<{ [key: string]: number }>({});
 
+
+    useEffect(() => {
+        fetchParams().then((data) => {
+            if (data) {
+                fetchImage(0);
+                //prevDebouncedParams.current = data;
+            }
+        });
+    }, []);
+
     const fetchParams = useCallback(async () => {
+        console.log("Fetch Params function is executed...");
         try {
             const response = await fetch('http://localhost:5000/param');
             if (!response.ok) throw new Error('Failed to fetch parameters');
-            const data = await response.json();
-            setParams(data);
-            return data;
+            const data: ParamResponse = await response.json();
+            console.log("data", data);
+            const extractedMetadata = Object.fromEntries(
+                Object.entries(data).map(([key, obj]) => [
+                    key,
+                    {
+                        max: obj.max,
+                        min: obj.min,
+                        name: obj.name,
+                        value: obj.value,
+                        widget: obj.widget,
+                    },
+                ])
+            );
+            setParamsMetadata(extractedMetadata);
+
+            const extractedParams = Object.fromEntries(
+                Object.entries(data).map(([key, obj]) => [key, obj.value])
+            );
+            setParams(extractedParams);
+            return extractedParams;
         } catch (err) {
             console.error(err);
             setError('Error fetching parameters');
@@ -30,6 +62,7 @@ const ImageFetcher = () => {
 
     const fetchImage = useCallback(
         async (version: number) => {
+            console.log("Fetch image function is executed");
             try {
                 setLoading(true);
                 if (imageUrl) {
@@ -50,7 +83,39 @@ const ImageFetcher = () => {
         [imageUrl]
     );
 
+    useEffect(() => {
+        console.log("Live updates is executed when there is fetchParams and fetchImage");
+        const sse = new EventSource('http://localhost:5000/param/live-updates');
+
+        sse.onmessage = (event) => {
+            console.log('Live update received:', event.data);
+            try {
+                const parsed = JSON.parse(event.data);
+                console.log("parsed", parsed);
+                if (parsed.event === 'param_updated') {
+                    console.log('Param updated by SSE:', parsed);
+                    fetchParams();
+                    fetchImage(parsed.version);
+                }
+            } catch (e) {
+                console.error('Invalid SSE payload:', e);
+            }
+        };
+
+        sse.onerror = (error) => {
+            console.error('SSE connection error:', error);
+            sse.close();
+        };
+
+        return () => {
+            sse.close();
+        };
+    }, [fetchParams, fetchImage]);
+
+
+
     const updateAllParams = useCallback(async () => {
+        console.log("Update all Params function is executed..");
         setIsUpdating(true);
         setError(null);
 
@@ -88,16 +153,8 @@ const ImageFetcher = () => {
         }
     }, [debouncedParams, fetchImage]);
 
-
     useEffect(() => {
-        fetchParams().then((data) => {
-            if (data) {
-                fetchImage(0);
-            }
-        });
-    }, []);
-
-    useEffect(() => {
+        console.log("This USeEffect is for imageURL dependency ");
         return () => {
             if (imageUrl) {
                 URL.revokeObjectURL(imageUrl);
@@ -105,18 +162,18 @@ const ImageFetcher = () => {
         };
     }, [imageUrl]);
 
-
-
     // Only trigger updateAllParams if debouncedParams actually changed
-    useEffect(() => {
+    /*useEffect(() => {
+        console.log("This useEffect is calling when the Params are changed");
         const hasChanged = JSON.stringify(prevDebouncedParams.current) !== JSON.stringify(debouncedParams);
         const isEmpty = Object.keys(debouncedParams).length === 0;
+        const hasInvalidParams = Object.values(invalidParams).some((error) => error !== null);
 
-        if (!isEmpty && hasChanged) {
+        if (!isEmpty && hasChanged && !hasInvalidParams) {
             prevDebouncedParams.current = debouncedParams;
             updateAllParams();
         }
-    }, [debouncedParams]);
+    }, [debouncedParams, invalidParams, updateAllParams]);*/
 
     const handleParamChange = useCallback((key: string, value: number) => {
         setParams(prev => {
@@ -124,7 +181,28 @@ const ImageFetcher = () => {
             return { ...prev, [key]: value };
         });
         setError(null);
-    }, []);
+        if (
+            paramsMetadata[key] &&
+            (value < paramsMetadata[key].min || value > paramsMetadata[key].max)
+        ) {
+            setInvalidParams(prev => ({
+                ...prev,
+                [key]: `Value must be between ${paramsMetadata[key].min} and ${paramsMetadata[key].max}`,
+            }));
+        } else {
+            setInvalidParams(prev => ({
+                ...prev,
+                [key]: null,
+            }));
+        }
+
+
+
+    }, [paramsMetadata]);
+
+    const isUpdateDisabled = useMemo(() => {
+        return Object.values(invalidParams).some((error) => error !== null);
+    }, [invalidParams]);
 
     const imageBlock = useMemo(() => {
         return loading ? (
@@ -134,22 +212,43 @@ const ImageFetcher = () => {
         );
     }, [imageUrl, loading]);
 
+    const validateValue = (key: string, value: number) => {
+        const paramMeta = paramsMetadata[key];
+        if (!paramMeta) return '';
+
+        const { min, max } = paramMeta;
+        let error = '';
+        if (min !== undefined && value < min) {
+            error = `${key} must be greater than or equal to ${min}`;
+        } else if (max !== undefined && value > max) {
+            error = `${key} must be less than or equal to ${max}`;
+        }
+
+        return error; 
+    };
+
     const paramInputs = useMemo(() => (
-        Object.entries(params).map(([key, value]) => (
-            <TextField
-                key={key}
-                label={key}
-                type="number"
-                value={value}
-                onChange={(e) => handleParamChange(key, Number(e.target.value))}
-                fullWidth
-                margin="normal"
-                inputProps={{
-                    min: 0
-                }}
-            />
-        ))
-    ), [params, handleParamChange]);
+        Object.entries(params).map(([key, value]) => {
+            const error = validateValue(key, value);
+            return (
+                <TextField
+                    key={key}
+                    label={key}
+                    type="number"
+                    value={value}
+                    onChange={(e) => handleParamChange(key, Number(e.target.value))}
+                    fullWidth
+                    margin="normal"
+                    inputProps={{
+                        min: paramsMetadata[key]?.min || 0,
+                        max: paramsMetadata[key]?.max || Infinity,
+                    }}
+                    error={!!error}
+                    helperText={error}
+                />
+            );
+        })
+    ), [params, handleParamChange, paramsMetadata]);
 
     return (
         <Grid container columns={12} columnSpacing={2} rowSpacing={2} padding={2}>
@@ -163,7 +262,7 @@ const ImageFetcher = () => {
                         variant="contained"
                         color="primary"
                         onClick={updateAllParams}
-                        disabled={isUpdating}
+                        disabled={isUpdating || isUpdateDisabled}
                         fullWidth
                         sx={{ marginTop: '10px' }}
                     >
