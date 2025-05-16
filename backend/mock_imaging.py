@@ -1,4 +1,5 @@
 import json
+import time
 from flask import Flask, request, jsonify, Response, send_file
 from flask_cors import CORS 
 import flask
@@ -7,22 +8,33 @@ import numpy as np
 import io, copy
 from pydantic import ValidationError
 import queue
+from collections import OrderedDict
+
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": ["http://localhost:5173"]}})
 
-param_db_meta = {'inline':{'name':'Inline', 'widget':'intslider', 'min':0, 'max':123},
-                 'aperture':{'name':'Aperture', 'widget':'floatbox', 'min':0, 'max':1e7}}
-
-param_db = {'inline':18,
-          'aperture':1e6}
+param_db_meta = OrderedDict([
+    ('inline', {'name': 'Inline', 'widget': 'intslider', 'min': 0, 'max': 123}),
+    ('crossline', {'name': 'Crossline', 'widget': 'intslider', 'min': 0, 'max': 123}),
+    #('aperture',{'name':'Aperture', 'widget':'floatbox', 'min':0, 'max':1e7}),
+    ('horizontal_offset', {'name': 'Horizontal offset', 'widget': 'floatslider', 'min': 0, 'max': 1000}),
+    ('Vp', {'name': 'P Velocity', 'widget': 'floatslider', 'min': 1, 'max': 20000}),
+    ('Vs', {'name': 'S Velocity', 'widget': 'floatslider', 'min': 1, 'max': 20000}),
+])
+param_db = {'inline':0,
+            'crossline':0,
+#            'aperture':1e6,
+            'horizontal_offset':0,
+            'Vp':2200,
+            'Vs':900
+            }
 
 param_db_version = 0
 current_image = None # This is a png image bytes object
 image_update_clients = []
 
 
-#Function to validate the data 
 def validate_param(data):
     validated_data = {}
     for key, value in data.items():
@@ -33,11 +45,19 @@ def validate_param(data):
         
         min_value = param_meta.get('min')
         max_value = param_meta.get('max')
-        expected_type = int if isinstance(min_value, int) else float  
+        widget_type = param_meta.get('widget', '')
+
+        # Determine expected type from widget
+        if 'int' in widget_type:
+            expected_type = int
+        elif 'float' in widget_type:
+            expected_type = (int, float)  # allow both int and float for floatslider/floatbox
+        else:
+            expected_type = (int, float)  # default safe assumption
         
         if not isinstance(value, expected_type):
-            raise ValueError(f"Parameter '{key}' must be of type {expected_type.__name__}.")
-        
+            raise ValueError(f"Parameter '{key}' must be of type {expected_type if isinstance(expected_type, tuple) else expected_type.__name__}.")
+
         if min_value is not None and value < min_value:
             raise ValueError(f"Value for '{key}' must be greater than or equal to {min_value}.")
         
@@ -48,42 +68,51 @@ def validate_param(data):
 
     return validated_data
 
+
 def notify_image_update_clients(event_data):
     print(f"Notify inage update client :{event_data}")
     for client_queue in image_update_clients:
         client_queue.put(event_data)
 
-def generate_image(inline, aperture,**kwargs):
+def generate_image(inline, horizontal_offset=0,
+                   Vp=2200, Vs=900,
+                   **kwargs):
     """This is a slow function which will be running in a separate 
     process in later versions"""
     
     #print(f'image generated with these parameter inline: {inline} aperture {aperture} ', )
+    tic = time.time()
     global current_image
     plt.figure(figsize=(6,6))
-    plt.plot(inline,aperture,'o')
+    plt.plot(horizontal_offset,0,'.k')
     x = np.linspace(-1000,1000,500)
     z = np.linspace(0,-2000,500)
     X,Z = np.meshgrid(x,z)
     Y = np.zeros_like(X) + inline*10
     z_src = -1700
-    Vp = 2200
-    Vs = 900
+    x_rcv = horizontal_offset
     # Assume the receiver is at (0,0) and the source is at (0,z_src)
     Tshot = np.sqrt(X**2 + Y**2 + (Z-z_src)**2)/Vs
-    Trcv = np.sqrt(X**2 + Y**2 + (Z)**2)/Vp
-    Tdirect = np.sqrt(z_src**2)/Vp
+    Trcv = np.sqrt((X-horizontal_offset)**2 + Y**2 + (Z)**2)/Vp
+    Tdirect = np.sqrt(z_src**2 + horizontal_offset**2)/Vp
     Lag = Tshot + Trcv - Tdirect
+    print(f'Lag {Lag}')
     
-    plt.imshow(Lag,extent=(-1000,1000,-2000,0),aspect=1)
+    plt.contour(X,Z,Lag,extent=(-1000,1000,-2000,0),aspect=1,levels=np.linspace(0,0.1,10))
+    #cs = plt.contourf(X, Z, Lag, extent=(-1000, 1000, -2000, 0), levels=np.linspace(0, 0.1, 10))
+    plt.gca().set_aspect('equal') 
     plt.tight_layout()
     plt.colorbar()
+    #plt.colorbar(cs)
     plt.title('Lag (seconds)')
     plt.xlabel('X (m)')
     plt.ylabel('Z (m)')
     current_image = io.BytesIO()
-    plt.savefig(current_image, dpi=250, format='png')
+    plt.savefig(current_image, dpi=150, format='jpg')
     plt.close(plt.gcf())
     plt.clf()
+    print(f"Elapsed image generate {time.time()-tic}") 
+
 
 # Create a default image
 generate_image(**param_db) 
@@ -104,14 +133,16 @@ def list_keys():
     res = copy.copy(param_db_meta)
     for key,val in res.items():
         res[key]['value'] = param_db[key]
-    return jsonify(res), 200
+    return jsonify({
+        "params": res,
+        "order": list(res.keys())  
+    }), 200
 
 @app.route('/param/version', methods=['GET'])
 def get_version():
     global param_db_version
     return jsonify({"version": param_db_version})
 
-#SSE route for live updates
 @app.route('/param/live-updates')
 def stream_live_param_updates():
     def event_stream(client_queue):
@@ -120,13 +151,19 @@ def stream_live_param_updates():
                 event = client_queue.get()
                 yield f"data: {json.dumps(event)}\n\n"
         except GeneratorExit:
-            print('A client disconnected from live updates stream')
-            image_update_clients.remove(client_queue)
+            print('A client disconnected from live updates stream (GeneratorExit)')
+        except Exception as e:
+            print(f'Unexpected disconnection or error: {e}')
+        finally:
+            if client_queue in image_update_clients:
+                image_update_clients.remove(client_queue)
+                print(f'Client queue removed. Remaining clients: {len(image_update_clients)}')
     
-    client_queue = queue.Queue() 
+    client_queue = queue.Queue()
     image_update_clients.append(client_queue)
-    print(f"A new client subscribed to live param updates.{image_update_clients}")
+    print(f"A new client subscribed to live param updates. Total clients: {len(image_update_clients)}")
     return Response(event_stream(client_queue), content_type='text/event-stream')
+
 
 # Endpoint to get/put parameter values and also re-generate the current_image
 @app.route('/param/<string:key>', methods=['GET','PUT'])

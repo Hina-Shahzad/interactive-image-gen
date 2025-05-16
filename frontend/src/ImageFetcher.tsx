@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Grid, Paper, Typography, TextField, Button, CircularProgress, Alert } from '@mui/material';
+import { Grid, Paper, Typography, Button, CircularProgress, Alert, Box } from '@mui/material';
 import useDebounce from './Debounce';
-import type { ParamMetadata, ParamResponse } from './type';
+import type { ParamMetadata} from './type';
+import ParamInput from './component/ParamInput';
 
 const ImageFetcher = () => {
     const [params, setParams] = useState<{ [key: string]: number }>({});
@@ -11,7 +12,8 @@ const ImageFetcher = () => {
     const [error, setError] = useState<string | null>(null);
     const [isUpdating, setIsUpdating] = useState(false);
     const [paramVersion, setParamVersion] = useState<number>(0);
-    const [invalidParams, setInvalidParams] = useState<{ [key: string]: string | null }>({});
+    const [paramOrder, setParamOrder] = useState<string[]>([]);
+
 
     const debouncedParams = useDebounce(params, 800);
     const prevDebouncedParams = useRef<{ [key: string]: number }>({});
@@ -20,37 +22,42 @@ const ImageFetcher = () => {
     useEffect(() => {
         fetchParams().then((data) => {
             if (data) {
-                fetchImage(0);
-                //prevDebouncedParams.current = data;
+                prevDebouncedParams.current = data;
+                // Fetch latest version from backend
+                fetchVersion().then(version => {
+                    setParamVersion(version);
+                    fetchImage(version);
+                });
             }
         });
     }, []);
 
     const fetchParams = useCallback(async () => {
-        console.log("Fetch Params function is executed...");
         try {
             const response = await fetch('http://localhost:5000/param');
             if (!response.ok) throw new Error('Failed to fetch parameters');
-            const data: ParamResponse = await response.json();
-            console.log("data", data);
-            const extractedMetadata = Object.fromEntries(
-                Object.entries(data).map(([key, obj]) => [
-                    key,
-                    {
-                        max: obj.max,
-                        min: obj.min,
-                        name: obj.name,
-                        value: obj.value,
-                        widget: obj.widget,
-                    },
-                ])
-            );
-            setParamsMetadata(extractedMetadata);
+            const json = await response.json();
+            
+            const data = json.params;
+            const order = json.order;
+            
+            const extractedMetadata: { [key: string]: ParamMetadata } = {};
+            const extractedParams: { [key: string]: number } = {};
 
-            const extractedParams = Object.fromEntries(
-                Object.entries(data).map(([key, obj]) => [key, obj.value])
-            );
+            for (const key of order) {
+            const obj = data[key];
+            extractedMetadata[key] = {
+                max: obj.max,
+                min: obj.min,
+                name: obj.name,
+                value: obj.value,
+                widget: obj.widget,
+            };
+            extractedParams[key] = obj.value;
+        }
+            setParamsMetadata(extractedMetadata);
             setParams(extractedParams);
+            setParamOrder(order);
             return extractedParams;
         } catch (err) {
             console.error(err);
@@ -59,20 +66,30 @@ const ImageFetcher = () => {
         }
     }, []);
 
-
+    const fetchVersion = useCallback(async () => {
+        try {
+            const response = await fetch('http://localhost:5000/param/version');
+            if (!response.ok) throw new Error('Failed to fetch version');
+            const data = await response.json();
+            console.log("version", data.version);
+            return data.version ?? 0;
+        } catch (error) {
+            console.error('Error fetching version:', error);
+            return 0;
+        }
+    }, []);
     const fetchImage = useCallback(
         async (version: number) => {
-            console.log("Fetch image function is executed");
             try {
                 setLoading(true);
-                if (imageUrl) {
-                    URL.revokeObjectURL(imageUrl);
-                }
                 const response = await fetch(`http://localhost:5000/result.png?v=${version}`, { cache: 'no-store' });
                 if (!response.ok) throw new Error('Failed to fetch image');
                 const blob = await response.blob();
                 const objectUrl = URL.createObjectURL(blob);
-                setImageUrl(objectUrl);
+                setImageUrl(prevUrl => {
+                    if (prevUrl) URL.revokeObjectURL(prevUrl);
+                    return objectUrl;
+                });
             } catch (error) {
                 console.error(error);
                 setError(error instanceof Error ? error.message : 'Unknown error occurred');
@@ -80,42 +97,34 @@ const ImageFetcher = () => {
                 setLoading(false);
             }
         },
-        [imageUrl]
+        []
     );
 
     useEffect(() => {
-        console.log("Live updates is executed when there is fetchParams and fetchImage");
         const sse = new EventSource('http://localhost:5000/param/live-updates');
-
         sse.onmessage = (event) => {
-            console.log('Live update received:', event.data);
             try {
                 const parsed = JSON.parse(event.data);
-                console.log("parsed", parsed);
                 if (parsed.event === 'param_updated') {
-                    console.log('Param updated by SSE:', parsed);
                     fetchParams();
+                    setParamVersion(parsed.version);
                     fetchImage(parsed.version);
                 }
             } catch (e) {
                 console.error('Invalid SSE payload:', e);
             }
         };
-
         sse.onerror = (error) => {
             console.error('SSE connection error:', error);
             sse.close();
         };
-
         return () => {
             sse.close();
         };
     }, [fetchParams, fetchImage]);
 
 
-
     const updateAllParams = useCallback(async () => {
-        console.log("Update all Params function is executed..");
         setIsUpdating(true);
         setError(null);
 
@@ -153,27 +162,16 @@ const ImageFetcher = () => {
         }
     }, [debouncedParams, fetchImage]);
 
-    useEffect(() => {
-        console.log("This USeEffect is for imageURL dependency ");
-        return () => {
-            if (imageUrl) {
-                URL.revokeObjectURL(imageUrl);
-            }
-        };
-    }, [imageUrl]);
-
     // Only trigger updateAllParams if debouncedParams actually changed
     useEffect(() => {
-        console.log("This useEffect is calling when the Params are changed");
         const hasChanged = JSON.stringify(prevDebouncedParams.current) !== JSON.stringify(debouncedParams);
         const isEmpty = Object.keys(debouncedParams).length === 0;
-        const hasInvalidParams = Object.values(invalidParams).some((error) => error !== null);
 
-        if (!isEmpty && hasChanged && !hasInvalidParams) {
+        if (!isEmpty && hasChanged) {
             prevDebouncedParams.current = debouncedParams;
             updateAllParams();
         }
-    }, [debouncedParams, invalidParams]);
+    }, [debouncedParams]);
 
     const handleParamChange = useCallback((key: string, value: number) => {
         setParams(prev => {
@@ -181,74 +179,42 @@ const ImageFetcher = () => {
             return { ...prev, [key]: value };
         });
         setError(null);
-        if (
-            paramsMetadata[key] &&
-            (value < paramsMetadata[key].min || value > paramsMetadata[key].max)
-        ) {
-            setInvalidParams(prev => ({
-                ...prev,
-                [key]: `Value must be between ${paramsMetadata[key].min} and ${paramsMetadata[key].max}`,
-            }));
-        } else {
-            setInvalidParams(prev => ({
-                ...prev,
-                [key]: null,
-            }));
-        }
+    }, []); 
 
+    const isUpdateDisabled = useMemo(() => isUpdating, [isUpdating]);
 
-
-    }, [paramsMetadata]);
-
-    const isUpdateDisabled = useMemo(() => {
-        return Object.values(invalidParams).some((error) => error !== null);
-    }, [invalidParams]);
-
-    const imageBlock = useMemo(() => {
-        return loading ? (
-            <CircularProgress />
-        ) : (
-            imageUrl && <img src={imageUrl} alt="Generated from Flask" style={{ maxWidth: '100%', maxHeight: '500px' }} />
-        );
-    }, [imageUrl, loading]);
-
-    const validateValue = (key: string, value: number) => {
-        const paramMeta = paramsMetadata[key];
-        if (!paramMeta) return '';
-
-        const { min, max } = paramMeta;
-        let error = '';
-        if (min !== undefined && value < min) {
-            error = `${key} must be greater than or equal to ${min}`;
-        } else if (max !== undefined && value > max) {
-            error = `${key} must be less than or equal to ${max}`;
-        }
-
-        return error; 
-    };
+    const imageBlock = useMemo(() => (
+        <Box sx={{ position: 'relative', display: 'inline-block' }}>
+            {imageUrl && (
+                <img src={imageUrl} alt="Generated from Flask" style={{ maxWidth: '100%', maxHeight: '500px' }} />
+            )}
+            {loading && (
+                <Box sx={{
+                    position: 'absolute',
+                    bottom: 10,
+                    right: 10,
+                    backgroundColor: 'rgba(255,255,255,0.8)',
+                    borderRadius: '50%',
+                    padding: '5px',
+                }}>
+                    <CircularProgress size={24} />
+                </Box>
+            )}
+        </Box>
+    ), [imageUrl, loading]);
 
     const paramInputs = useMemo(() => (
-        Object.entries(params).map(([key, value]) => {
-            const error = validateValue(key, value);
-            return (
-                <TextField
-                    key={key}
-                    label={key}
-                    type="number"
-                    value={value}
-                    onChange={(e) => handleParamChange(key, Number(e.target.value))}
-                    fullWidth
-                    margin="normal"
-                    inputProps={{
-                        min: paramsMetadata[key]?.min || 0,
-                        max: paramsMetadata[key]?.max || Infinity,
-                    }}
-                    error={!!error}
-                    helperText={error}
-                />
-            );
-        })
-    ), [params, handleParamChange, paramsMetadata]);
+    paramOrder.map((key) => (
+        <ParamInput
+            key={key}
+            keyName={key}
+            paramMeta={paramsMetadata[key]}
+            value={params[key]}
+            onChange={handleParamChange}
+            error={null}
+        />
+    ))
+), [paramOrder, params, paramsMetadata, handleParamChange]);
 
     return (
         <Grid container columns={12} columnSpacing={2} rowSpacing={2} padding={2}>
