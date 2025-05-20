@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Grid, Paper, Typography, Button, CircularProgress, Alert, Box } from '@mui/material';
 import useDebounce from './Debounce';
-import type { ParamMetadata} from './type';
+import type { ParamMetadata } from './type';
 import ParamInput from './component/ParamInput';
 
 const ImageFetcher = () => {
@@ -37,24 +37,24 @@ const ImageFetcher = () => {
             const response = await fetch('http://localhost:5000/param');
             if (!response.ok) throw new Error('Failed to fetch parameters');
             const json = await response.json();
-            
+
             const data = json.params;
             const order = json.order;
-            
+
             const extractedMetadata: { [key: string]: ParamMetadata } = {};
             const extractedParams: { [key: string]: number } = {};
 
             for (const key of order) {
-            const obj = data[key];
-            extractedMetadata[key] = {
-                max: obj.max,
-                min: obj.min,
-                name: obj.name,
-                value: obj.value,
-                widget: obj.widget,
-            };
-            extractedParams[key] = obj.value;
-        }
+                const obj = data[key];
+                extractedMetadata[key] = {
+                    max: obj.max,
+                    min: obj.min,
+                    name: obj.name,
+                    value: obj.value,
+                    widget: obj.widget,
+                };
+                extractedParams[key] = obj.value;
+            }
             setParamsMetadata(extractedMetadata);
             setParams(extractedParams);
             setParamOrder(order);
@@ -179,24 +179,26 @@ const ImageFetcher = () => {
             return { ...prev, [key]: value };
         });
         setError(null);
-    }, []); 
+    }, []);
 
     const isUpdateDisabled = useMemo(() => isUpdating, [isUpdating]);
 
     const imageBlock = useMemo(() => (
         <Box sx={{ position: 'relative', display: 'inline-block' }}>
             {imageUrl && (
-                <img src={imageUrl} alt="Generated from Flask" style={{ maxWidth: '100%', maxHeight: '500px' }} />
+                <img src={imageUrl} alt="Generated from Flask" 
+                style={{ maxWidth: '100%', maxHeight: '500px'}} />
             )}
             {loading && (
                 <Box sx={{
                     position: 'absolute',
-                    bottom: 10,
-                    right: 10,
+                    top: 10,
+                    left: 10,
                     backgroundColor: 'rgba(255,255,255,0.8)',
                     borderRadius: '50%',
                     padding: '5px',
-                }}>
+                }}
+                >
                     <CircularProgress size={24} />
                 </Box>
             )}
@@ -204,24 +206,25 @@ const ImageFetcher = () => {
     ), [imageUrl, loading]);
 
     const paramInputs = useMemo(() => (
-    paramOrder.map((key) => (
-        <ParamInput
-            key={key}
-            keyName={key}
-            paramMeta={paramsMetadata[key]}
-            value={params[key]}
-            onChange={handleParamChange}
-            error={null}
-        />
-    ))
-), [paramOrder, params, paramsMetadata, handleParamChange]);
+        paramOrder.map((key) => (
+            <ParamInput
+                key={key}
+                keyName={key}
+                paramMeta={paramsMetadata[key]}
+                value={params[key]}
+                onChange={handleParamChange}
+                error={null}
+            />
+        ))
+    ), [paramOrder, params, paramsMetadata, handleParamChange]);
 
     return (
-        <Grid container columns={12} columnSpacing={2} rowSpacing={2} padding={2}>
-            <Grid sx={{ gridColumn: 'span 12', '@media (min-width: 960px)': { gridColumn: 'span 4' } }}>
+        <Grid container spacing={2} padding={2}>
+            {/* Parameters Grid */}
+            <Grid size={{ xs: 12, md: 3 }}>
                 <Paper elevation={3} sx={{ padding: '20px' }}>
                     <Typography variant="h5" gutterBottom>
-                        Update Parameters
+                        Parameters
                     </Typography>
                     {paramInputs}
                     <Button
@@ -234,21 +237,22 @@ const ImageFetcher = () => {
                     >
                         {isUpdating ? 'Updating...' : 'Update Image'}
                     </Button>
-                    {error && <Alert severity="error" sx={{ marginTop: '10px' }}>{error}</Alert>}
+                    {/* {error && <Alert severity="error" sx={{ marginTop: '10px' }}>{error}</Alert>} */}
                 </Paper>
             </Grid>
 
-            <Grid sx={{ gridColumn: 'span 12', '@media (min-width: 960px)': { gridColumn: 'span 8' } }}>
+            {/* Result Grid */}
+            <Grid size={{ xs: 12, md: 6 }}>
                 <Paper elevation={3} sx={{ padding: '20px', textAlign: 'center' }}>
                     <Typography variant="h5" gutterBottom>
-                        Image from Flask Backend
+                        Result
                     </Typography>
                     {imageBlock}
                 </Paper>
             </Grid>
         </Grid>
-
     );
+
 };
 
 export default ImageFetcher;

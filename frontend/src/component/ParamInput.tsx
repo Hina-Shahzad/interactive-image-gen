@@ -30,14 +30,28 @@ const ParamInput = ({
         return (
             <Box sx={{ maxWidth: 300, marginBottom: 2 }}>
                 <Typography gutterBottom>{label}</Typography>
-                <Slider
+                <Box display="flex" alignItems="center" gap={1}>
+                    <Typography variant="body2">{min}</Typography>
+                    <Slider
                     value={value}
                     min={min}
                     max={max}
                     step={widget === 'intslider' ? 1 : (max - min) / 100}
                     onChange={handleSliderChange}
-                    valueLabelDisplay="auto"
+                    valueLabelDisplay="off"
+                    sx={{ flexGrow: 1 }}
                 />
+                <Typography variant="body2">{max}</Typography>
+                </Box>
+            <TextField
+                type="number"
+                value={value}
+                onChange={(e) => onChange(keyName, Number(e.target.value))}
+                inputProps={{ min, max }}
+                sx={{ mt: 1, width: '100px' }}
+                error={!!error}
+                helperText={error}
+            />
             </Box>
         );
     }

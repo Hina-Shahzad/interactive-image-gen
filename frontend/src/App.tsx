@@ -4,11 +4,7 @@ function App() {
 
   return (
     <>
-      <div>
-        <ImageFetcher />
-      </div>
-     
-      
+      <ImageFetcher />
     </>
   )
 }
